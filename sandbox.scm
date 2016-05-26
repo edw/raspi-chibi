@@ -1,5 +1,6 @@
 (import (chibi)
         (except (chibi show) fn)
+        (chibi time)
         (skim core)
         (srfi 1)
         (srfi 9)
@@ -42,13 +43,78 @@
                       (-> (bitwise-and #xff00 color)
                           (arithmetic-shift -8))))
 
-(define (blit bm x y)
+(define (->bitmap . rows)
+  (let* ((height (length rows))
+         (width (vector-length (car rows)))
+         (bitmap (make-bitmap width height)))
+    (let iter-y ((rows rows) (y 0))
+      (if (null? rows)
+          bitmap
+          (let ((row (car rows)))
+            (let iter-x ((x 0))
+              (if (< x width)
+                  (begin (plot bitmap x y (vector-ref row x))
+                         (iter-x (+ x 1)))
+                  (iter-y (cdr rows) (+ y 1)))))))))
+
+(define digits
+  (let ((- black) (* white))
+    (vector
+     (->bitmap                          ; 0
+      (vector * * *)
+      (vector * - *)
+      (vector * * *))
+     (->bitmap                          ; 1
+      (vector - - *)
+      (vector - - *)
+      (vector - - *))
+     (->bitmap                          ; 2
+      (vector * * -)
+      (vector - * *)
+      (vector * * *))
+     (->bitmap                          ; 3
+      (vector * * *)
+      (vector - * *)
+      (vector * * *))
+     (->bitmap                          ; 4
+      (vector * - *)
+      (vector - * *)
+      (vector - - *))
+     (->bitmap                          ; 5
+      (vector * * *)
+      (vector * - -)
+      (vector * * -))
+     (->bitmap                          ; 6
+      (vector * - -)
+      (vector * * *)
+      (vector * * *))
+     (->bitmap                          ; 7
+      (vector * * *)
+      (vector - * -)
+      (vector * - -))
+     (->bitmap                          ; 8
+      (vector * * *)
+      (vector * * *)
+      (vector * * *))
+     (->bitmap                          ; 9
+      (vector * * *)
+      (vector * * *)
+      (vector - - *)))))
+
+(define blit-normal 0)
+(define blit-add 1)
+
+(define (blit bm x y mode)
   (framebuffer-blit-primitive (cadr fb)
                               (bitmap-buffer bm)
                               (bitmap-width bm)
                               (bitmap-height bm)
                               x
-                              y))
+                              y
+                              mode))
+
+(define (blit-digit n x y mode)
+  (blit (vector-ref digits n) x y mode))
 
 (define (scale n max+1)
   "Return a value in [0,1] representing a scaling of N within [0, MAX]"
@@ -102,7 +168,7 @@
   (dosiq #(r (iota 11 0.0 0.1)
            g (iota 11 0.0 0.1)
            b (iota 11 0.0 0.1))
-    (begin (blit (make-bitmap 8 8 (rgb->val r g b))))))
+    (begin (blit (make-bitmap 8 8 (rgb->val r g b)) blit-normal))))
 
 (define (wheel x y spread b theta)
   (let ((bitmap (make-bitmap 8 8))
@@ -119,7 +185,7 @@
                     r (min (/ r spread) 1.0)
                     val (hsv->val theta r b)))
       (plot bitmap x y val))
-    (blit bitmap 0 0)))
+    (blit bitmap 0 0 blit-normal)))
 
 (define (ramp-wheel)
   (dosiq #(b (iota 17 0.0 (/ 1.0 16.0)))
@@ -196,7 +262,7 @@
 (define (iter-brot cx cy begin-scale scale-step iters)
   (let iter ((scale begin-scale)
              (i 0))
-    (blit (brot cx cy scale) 0 0)
+    (blit (brot cx cy scale) 0 0 blit-normal)
     (if (< i iters)
         (iter (* scale scale-step) (+ i 1)))))
 
@@ -217,14 +283,15 @@
          (msec (* (vector-ref ts 1) 10e-07)))
     (exact (floor (+ (* sec 10e03) msec)))))
 
-(define (explore-brot cx cy scale scale-step)
+(define (explore-brot cx cy scale scale-step overlay-proc)
   (let iter ((cx cx)
              (cy cy)
              (scale scale)
              (last-key #f)
              (key-msec #f)
              (penult-key #f))
-    (blit (brot cx cy scale) 0 0)
+    (blit (brot cx cy scale) 0 0 blit-normal)
+    (overlay-proc)
     (let ((nudge (/ scale 3))
           (wall-msec (get-millis-monotonic)))
       (cond
@@ -271,3 +338,16 @@
 ;; (explore-brot 0.000201934636950964 -0.519542868607324 0.363125667142715 0.9)
 
 ;; (iter-brot 0.163002692367463 -1.22465413174641 0.2 0.9 100)
+
+(define (clock)
+  (let* ((tm (seconds->time (current-seconds)))
+         (hour (time-hour tm))
+         (min (time-minute tm))
+         (digit0 (truncate (/ hour 10)))
+         (digit1 (modulo hour 10))
+         (digit2 (truncate (/ min 10)))
+         (digit3 (modulo min 10)))
+    (blit-digit digit0 0 0 blit-add)
+    (blit-digit digit1 4 0 blit-add)
+    (blit-digit digit2 0 4 blit-add)
+    (blit-digit digit3 4 4 blit-add)))

@@ -289,16 +289,67 @@ sexp close_fb_scm(sexp ctx, sexp self, sexp n, sexp fb_pair) {
   return res;
 }
 
+#define COMPONENT_RED 0
+#define COMPONENT_GREEN 1
+#define COMPONENT_BLUE 2
+
+uint16_t px_component_mask(px, component) {
+  uint16_t ret;
+  switch(component) {
+  case COMPONENT_RED:
+    ret = 0x1f & (px >> 11);
+    break;
+  case COMPONENT_GREEN:
+    ret = 0x3f & (px >> 5);
+    break;
+  case COMPONENT_BLUE:
+    ret = 0x1f & px;
+    break;
+  default:
+    ret = 0;
+  }
+  return ret;
+}
+
+uint16_t px_component_normalize(int px, int component) {
+  uint16_t max = component != COMPONENT_GREEN ? 0x1f : 0x3f;
+  int bits = (component != COMPONENT_BLUE ? 5 : 0) +
+    (component == COMPONENT_RED ? 6 : 0);
+  int max_px = (px > max) ? max : px;
+  int min_px = (max_px < 0) ? 0 0 : max_px;
+  return (uint16_t)min_px << bits;
+}
+
+uint16_t blit_op(int mode, uint16_t bot, uint16_t top) {
+  int ret;
+  switch(mode) {
+  case 0:
+    ret = top;
+    break;
+  case 1:
+    if(top == 0)
+      ret = bot;
+    else
+      ret = top;
+    break;
+  default:
+    ret = bot;
+  };
+  return ret;
+}
+
 const int xo = 0, yo = 0, wf = 8, hf = 8;
 
 sexp blit_fb_scm(sexp ctx, sexp self, sexp n,
                  sexp fb_obj, sexp bm_obj, sexp width_obj, sexp height_obj,
-                 sexp x_obj, sexp y_obj) {
+                 sexp x_obj, sexp y_obj, sexp mode_obj) {
   
   int w = sexp_unbox_fixnum(width_obj),
     h = sexp_unbox_fixnum(height_obj),
     x = sexp_unbox_fixnum(x_obj),
-    y = sexp_unbox_fixnum(y_obj);
+    y = sexp_unbox_fixnum(y_obj),
+    mode = sexp_unbox_fixnum(mode_obj);
+  
   struct fb_t **fb = sexp_bytes_data(fb_obj);
   uint16_t *bm = sexp_bytes_data(bm_obj);
 
@@ -306,13 +357,13 @@ sexp blit_fb_scm(sexp ctx, sexp self, sexp n,
   
   int y1, x1;
   for (y1 = 0; y1 < h; y1++) {
-    int fby = y1 + yo - y;
+    int fby = y1 + yo + y;
 
     if (fby < 0) continue;
     if (fby >= wf) break;
     
     for (x1 = 0; x1 < w; x1++) {
-      int fbx = x1 + xo - x;
+      int fbx = x1 + xo + x;
 
       if (fbx < 0) continue;
       if (fbx >= hf) break;
@@ -320,7 +371,7 @@ sexp blit_fb_scm(sexp ctx, sexp self, sexp n,
       int i = (fby * wf + fbx);
       int j = (y1 * w + x1);
 
-      (*fb)->pixel[i] = bm[j];
+      (*fb)->pixel[i] = blit_op(mode, (*fb)->pixel[i], bm[j]);
     }
   }
   return SEXP_TRUE;
@@ -342,7 +393,7 @@ int main(int argc, char* args[])
   sexp_define_foreign(ctx, env, "evdev-keydown?", 2, evdev_keydownp_scm);
   sexp_define_foreign(ctx, env, "framebuffer-open", 1, open_fb_scm);
   sexp_define_foreign(ctx, env, "framebuffer-close", 1, close_fb_scm);
-  sexp_define_foreign(ctx, env, "framebuffer-blit-primitive", 6, blit_fb_scm);
+  sexp_define_foreign(ctx, env, "framebuffer-blit-primitive", 7, blit_fb_scm);
   sexp_define_foreign(ctx, env, "framebuffer-low-light", 2, fb_lowlight_scm);
 
   sexp_gc_var1(prelude_filename_obj);
