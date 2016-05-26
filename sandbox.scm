@@ -283,7 +283,7 @@
          (msec (* (vector-ref ts 1) 10e-07)))
     (exact (floor (+ (* sec 10e03) msec)))))
 
-(define (explore-brot cx cy scale scale-step overlay-proc)
+(define (explore-brot cx cy scale scale-step . overlay-procs)
   (let iter ((cx cx)
              (cy cy)
              (scale scale)
@@ -291,7 +291,8 @@
              (key-msec #f)
              (penult-key #f))
     (blit (brot cx cy scale) 0 0 blit-normal)
-    (overlay-proc)
+    (dosiq #(proc overlay-procs)
+           (proc))
     (let ((nudge (/ scale 3))
           (wall-msec (get-millis-monotonic)))
       (cond
@@ -338,6 +339,10 @@
 ;; (explore-brot 0.000201934636950964 -0.519542868607324 0.363125667142715 0.9)
 
 ;; (iter-brot 0.163002692367463 -1.22465413174641 0.2 0.9 100)
+
+;; (explore-brot 0.000677636708120639 -1.57497165488726 3.67981244787789e-07 0.9 clock)
+
+
 
 (define (clock)
   (let* ((tm (seconds->time (current-seconds)))
